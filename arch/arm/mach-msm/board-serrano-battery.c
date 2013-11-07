@@ -43,37 +43,38 @@ extern unsigned int system_rev;
 static unsigned int sec_bat_recovery_mode;
 sec_battery_platform_data_t sec_battery_pdata;
 
-#if defined(CONFIG_MACH_SERRANO)
+#if defined(CONFIG_MACH_SERRANO_ATT) || defined(CONFIG_MACH_SERRANO_VZW)\
+	|| defined(CONFIG_MACH_SERRANO_SPR)
 static sec_charging_current_t charging_current_table[] = {
-	{1000,	1200,	180,	40*60},
-	{0,	0,	0,	0},
-	{0,	0,	0,	0},
-	{1000,	1200,	180,	40*60},
-	{460,	460,	180,	40*60},
-	{460,	460,	180,	40*60},
-	{460,	460,	180,	40*60},
-	{460,	460,	180,	40*60},
-	{1000,	1200,	180,	40*60},
-	{0,	0,	0,	0},
-	{500,	500,	180,	40*60},
-	{1000,	1200,	180,	40*60},
-	{0,	0,	0,	0},
-	{0,	0,	0,	0},
+	{1067,	1200,	125,	40*60},	/* Unknown */
+	{0,	0,	0,	0},					/* Battery */
+	{0,	0,	0,	0},					/* UPS */
+	{1067,	1200,	125,	40*60},	/* MAINS */
+	{460,	460,	125,	40*60},	/* USB */
+	{460,	460,	125,	40*60},	/* USB_DCP */
+	{1067,	1200,	125,	40*60},	/* USB_CDP */
+	{460,	460,	125,	40*60},	/* USB_ACA */
+	{1067,	1200,	125,	40*60},	/* MISC */
+	{0,	0,	0,	0},					/* Cardock */
+	{500,	500,	125,	40*60},	/* Wireless */
+	{1067,	1200,	125,	40*60},	/* UartOff */
+	{0,	0,	0,	0},					/* OTG */
+	{0,	0,	0,	0},					/* BMS */
 };
 #else
 static sec_charging_current_t charging_current_table[] = {
-	{1800,	2100,	200,	40*60},	/* Unknown */
+	{1067,	1200,	180,	40*60},	/* Unknown */
 	{0,	0,	0,	0},					/* Battery */
 	{0,	0,	0,	0},					/* UPS */
-	{1800,	2100,	200,	40*60},	/* MAINS */
-	{460,	460,	200,	40*60},	/* USB */
-	{460,	460,	200,	40*60},	/* USB_DCP */
-	{1000,	1000,	200,	40*60},	/* USB_CDP */
-	{460,	460,	200,	40*60},	/* USB_ACA */
-	{1700,	2100,	200,	40*60},	/* MISC */
+	{1067,	1200,	180,	40*60},	/* MAINS */
+	{460,	460,	180,	40*60},	/* USB */
+	{460,	460,	180,	40*60},	/* USB_DCP */
+	{1067,	1200,	180,	40*60},	/* USB_CDP */
+	{460,	460,	180,	40*60},	/* USB_ACA */
+	{1067,	1200,	180,	40*60},	/* MISC */
 	{0,	0,	0,	0},					/* Cardock */
-	{500,	500,	200,	40*60},	/* Wireless */
-	{1800,	2100,	200,	40*60},	/* UartOff */
+	{500,	500,	180,	40*60},	/* Wireless */
+	{1067,	1200,	180,	40*60},	/* UartOff */
 	{0,	0,	0,	0},					/* OTG */
 	{0,	0,	0,	0},					/* BMS */
 };
@@ -134,7 +135,7 @@ static struct i2c_gpio_platform_data gpio_i2c_data_fgchg = {
 static bool sec_fg_gpio_init(void)
 {
 	sec_battery_pdata.fg_irq = MSM_GPIO_TO_INT(GPIO_FUEL_INT);
-	gpio_tlmm_config(GPIO_CFG(gpio_i2c_data_fgchg.scl_pin, 0,
+	gpio_tlmm_config(GPIO_CFG(GPIO_FUEL_INT, 0,
 			GPIO_CFG_INPUT, GPIO_CFG_NO_PULL, GPIO_CFG_2MA), 1);
 
 	/* FUEL_ALERT Setting */
@@ -178,6 +179,15 @@ static void sec_bat_initial_check(void)
 		}
 	}
 }
+
+#if defined(CONFIG_MFD_MAX77693)
+extern void max77693_muic_monitor_status(void);
+static void sec_bat_monitor_additional_check(void)
+{
+	/* check muic cable status */
+	max77693_muic_monitor_status();
+}
+#endif
 
 static bool sec_bat_check_jig_status(void)
 {
@@ -298,12 +308,11 @@ static bool sec_bat_check_cable_result_callback(
 	struct regulator *l29;
 	current_cable_type = cable_type;
 
-	if(system_rev >= 0x8)
-	{
+	if(system_rev >= 0x6) {
 		if (current_cable_type == POWER_SUPPLY_TYPE_BATTERY)
 		{
 			pr_info("%s set ldo off\n", __func__);
-			l29 = regulator_get(NULL, "8921_l29");
+			l29 = regulator_get(NULL, "8917_l29");
 			if(l29 > 0)
 			{
 				regulator_disable(l29);
@@ -312,7 +321,7 @@ static bool sec_bat_check_cable_result_callback(
 		else
 		{
 			pr_info("%s set ldo on\n", __func__);
-			l29 = regulator_get(NULL, "8921_l29");
+			l29 = regulator_get(NULL, "8917_l29");
 			if(l29 > 0)
 			{
 				regulator_enable(l29);
@@ -373,7 +382,7 @@ static bool sec_bat_get_temperature_callback(
 static bool sec_fg_fuelalert_process(bool is_fuel_alerted) {return true; }
 
 #if defined(CONFIG_MACH_SERRANO_ATT) || defined(CONFIG_MACH_SERRANO_TMO)\
-	|| defined(CONFIG_MACH_SERRANO_USC)
+	|| defined(CONFIG_MACH_SERRANO_USC) || defined(CONFIG_MACH_SERRANO_SPR)
 static const sec_bat_adc_table_data_t temp_table[] = {
 	{208,	700},
 	{249,	650},
@@ -394,6 +403,28 @@ static const sec_bat_adc_table_data_t temp_table[] = {
 	{1552,	-100},
 	{1608,	-150},
 	{1650,	-200},
+};
+#elif defined(CONFIG_MACH_SERRANO_VZW)
+static const sec_bat_adc_table_data_t temp_table[] = {
+	{220,	700},
+	{259,	650},
+	{300,	600},
+	{353,	550},
+	{419,	500},
+	{488,	450},
+	{562,	400},
+	{632,	350},
+	{722,	300},
+	{816,	250},
+	{921,	200},
+	{1031,	150},
+	{1145,	100},
+	{1251,	50},
+	{1356,	0},
+	{1445,	-50},
+	{1519,	-100},
+	{1579,	-150},
+	{1634,	-200},
 };
 #else
 static const sec_bat_adc_table_data_t temp_table[] = {
@@ -444,19 +475,31 @@ static int polling_time_table[] = {
 
 static struct battery_data_t melius_battery_data[] = {
 	/* SDI battery data (High voltage 4.35V) */
+#if defined(CONFIG_MACH_SERRANO_VZW)
 	{
-		.RCOMP0 = 0x53,
-		.RCOMP_charging = 0x53,
+		.RCOMP0 = 0x72,
+		.RCOMP_charging = 0x6D,
 		.temp_cohot = -1200,
 		.temp_cocold = -5150,
 		.is_using_model_data = true,
 		.type_str = "SDI",
 	}
+#else
+	{
+		.RCOMP0 = 0x72,
+		.RCOMP_charging = 0x72,
+		.temp_cohot = -1200,
+		.temp_cocold = -5150,
+		.is_using_model_data = true,
+		.type_str = "SDI",
+	}
+#endif
 };
 
 sec_battery_platform_data_t sec_battery_pdata = {
 	/* NO NEED TO BE CHANGED */
 	.initial_check = sec_bat_initial_check,
+	.monitor_additional_check = sec_bat_monitor_additional_check,
 	.bat_gpio_init = sec_bat_gpio_init,
 	.fg_gpio_init = sec_fg_gpio_init,
 	.chg_gpio_init = sec_chg_gpio_init,
@@ -571,7 +614,22 @@ sec_battery_platform_data_t sec_battery_pdata = {
 
 	.temp_high_threshold_normal = 480,
 	.temp_high_recovery_normal = 410,
-	.temp_low_threshold_normal = -20,
+	.temp_low_threshold_normal = -50,
+	.temp_low_recovery_normal = 10,
+
+	.temp_high_threshold_lpm = 450,
+	.temp_high_recovery_lpm = 440,
+	.temp_low_threshold_lpm = -30,
+	.temp_low_recovery_lpm = -20,
+#elif defined(CONFIG_MACH_SERRANO_SPR)
+	.temp_high_threshold_event = 630,
+	.temp_high_recovery_event = 410,
+	.temp_low_threshold_event = -30,
+	.temp_low_recovery_event = 0,
+
+	.temp_high_threshold_normal = 480,
+	.temp_high_recovery_normal = 410,
+	.temp_low_threshold_normal = -50,
 	.temp_low_recovery_normal = 10,
 
 	.temp_high_threshold_lpm = 450,
@@ -579,20 +637,35 @@ sec_battery_platform_data_t sec_battery_pdata = {
 	.temp_low_threshold_lpm = -30,
 	.temp_low_recovery_lpm = -10,
 #elif defined(CONFIG_MACH_SERRANO_USC)
-	.temp_high_threshold_event = 630,
-	.temp_high_recovery_event = 410,
-	.temp_low_threshold_event = -30,
+	.temp_high_threshold_event = 590,
+	.temp_high_recovery_event = 415,
+	.temp_low_threshold_event = -40,
 	.temp_low_recovery_event = 0,
 
-	.temp_high_threshold_normal = 630,
-	.temp_high_recovery_normal = 410,
-	.temp_low_threshold_normal = -30,
+	.temp_high_threshold_normal = 590,
+	.temp_high_recovery_normal = 415,
+	.temp_low_threshold_normal = -40,
 	.temp_low_recovery_normal = 0,
 
 	.temp_high_threshold_lpm = 450,
 	.temp_high_recovery_lpm = 430,
 	.temp_low_threshold_lpm = -30,
 	.temp_low_recovery_lpm = -10,
+#elif defined(CONFIG_MACH_SERRANO_VZW)
+	.temp_high_threshold_event = 601,
+	.temp_high_recovery_event = 420,
+	.temp_low_threshold_event = -40,
+	.temp_low_recovery_event = 0,
+
+	.temp_high_threshold_normal = 480,
+	.temp_high_recovery_normal = 430,
+	.temp_low_threshold_normal = -60,
+	.temp_low_recovery_normal = 0,
+
+	.temp_high_threshold_lpm = 451,
+	.temp_high_recovery_lpm = 430,
+	.temp_low_threshold_lpm = -40,
+	.temp_low_recovery_lpm = 0,
 #else
 	/* temporarily */
 	.temp_high_threshold_event = 600,
@@ -617,7 +690,7 @@ sec_battery_platform_data_t sec_battery_pdata = {
 	.chg_polarity_full_check = 1,
 	.full_condition_type = SEC_BATTERY_FULL_CONDITION_SOC |
 		SEC_BATTERY_FULL_CONDITION_NOTIMEFULL |
-		SEC_BATTERY_RECHARGE_CONDITION_VCELL,
+		SEC_BATTERY_FULL_CONDITION_VCELL,
 	.full_condition_soc = 97,
 	.full_condition_vcell = 4300,
 

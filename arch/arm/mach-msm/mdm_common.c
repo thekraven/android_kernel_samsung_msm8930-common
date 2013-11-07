@@ -364,7 +364,7 @@ static void mdm_update_gpio_configs(struct mdm_device *mdev,
 static long mdm_modem_ioctl(struct file *filp, unsigned int cmd,
 				unsigned long arg)
 {
-	int status, ret = 0, gpio_status;
+	int status, ret = 0;
 	struct mdm_device *mdev = filp->private_data;
 	struct mdm_modem_drv *mdm_drv;
 
@@ -384,14 +384,10 @@ static long mdm_modem_ioctl(struct file *filp, unsigned int cmd,
 		mdm_ops->power_on_mdm_cb(mdm_drv);
 		break;
 	case CHECK_FOR_BOOT:
-		gpio_status = gpio_get_value(mdm_drv->mdm2ap_status_gpio);
-		if (gpio_status == 0)
+		if (gpio_get_value(mdm_drv->mdm2ap_status_gpio) == 0)
 			put_user(1, (unsigned long __user *) arg);
 		else
 			put_user(0, (unsigned long __user *) arg);
-		pr_info("%s: mdm2ap_gpio_status for mdm id %d is %s\n",
-				__func__, mdev->mdm_data.device_id,
-				(gpio_status ? "High" : "Low"));
 		break;
 	case NORMAL_BOOT_DONE:
 		pr_debug("%s: check if mdm id %d is booted up\n",
@@ -585,10 +581,7 @@ static irqreturn_t mdm_status_change(int irq, void *dev_id)
 
 	pr_debug("%s: mdm id %d sent status change interrupt\n",
 			 __func__, mdev->mdm_data.device_id);
-	if (!atomic_read(&mdm_drv->mdm_ready))
-		return IRQ_HANDLED;
-
-	if (value == 0) {
+	if (value == 0 && atomic_read(&mdm_drv->mdm_ready)) {
 		pr_info("%s: unexpected reset external modem id %d\n",
 				__func__, mdev->mdm_data.device_id);
 		mdm_drv->mdm_unexpected_reset_occurred = 1;
@@ -779,12 +772,18 @@ static void mdm_modem_initialize_data(struct platform_device *pdev,
 
 	memset((void *)&mdev->mdm_subsys, 0,
 		   sizeof(struct subsys_desc));
-	if (mdev->mdm_data.device_id <= 0)
-		snprintf(mdev->subsys_name, sizeof(mdev->subsys_name),
-			 "%s",  EXTERNAL_MODEM);
-	else
-		snprintf(mdev->subsys_name, sizeof(mdev->subsys_name),
-			 "%s.%d",  EXTERNAL_MODEM, mdev->mdm_data.device_id);
+	if (mdm_drv->pdata->subsys_name) {
+		strlcpy(mdev->subsys_name, mdm_drv->pdata->subsys_name,
+				sizeof(mdev->subsys_name));
+	} else {
+		if (mdev->mdm_data.device_id <= 0)
+			snprintf(mdev->subsys_name, sizeof(mdev->subsys_name),
+				"%s",  EXTERNAL_MODEM);
+		else
+			snprintf(mdev->subsys_name, sizeof(mdev->subsys_name),
+				"%s.%d",  EXTERNAL_MODEM,
+				mdev->mdm_data.device_id);
+	}
 	mdev->mdm_subsys.shutdown = mdm_subsys_shutdown;
 	mdev->mdm_subsys.ramdump = mdm_subsys_ramdumps;
 	mdev->mdm_subsys.powerup = mdm_subsys_powerup;

@@ -449,12 +449,14 @@ static void mxt224_power_onoff(int onoff)
 {
 	int ret = 0;
 
-	static struct regulator *reg_l31;
-	static struct regulator *reg_lvs6;
-
 	pr_info("[TSP] power %s\n", onoff ? "on" : "off");
-
-	if (system_rev >= BOARD_REV00) {
+#if defined(CONFIG_MACH_EXPRESS)
+		if (system_rev > BOARD_REV02) {
+#else
+		if (system_rev >= BOARD_REV00) {
+#endif
+		static struct regulator *reg_l31;
+		static struct regulator *reg_lvs6;
 		if (!reg_lvs6) {
 			reg_lvs6 = regulator_get(NULL, "8917_lvs6");
 			if (IS_ERR(reg_lvs6)) {
@@ -716,6 +718,8 @@ static bool mxts_read_chg(void)
 #define PROJECT_NAME	"I9190"
 #elif defined(CONFIG_MACH_SERRANO_EUR_LTE)
 #define PROJECT_NAME	"I9195"
+#elif defined(CONFIG_MACH_SERRANO_KOR_LTE)
+#define PROJECT_NAME	"E370D"
 #elif defined(CONFIG_MACH_SERRANO_USC)
 #define PROJECT_NAME	"R890"
 #elif defined(CONFIG_MACH_SERRANO_VZW)

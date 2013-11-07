@@ -75,7 +75,7 @@
 #define GPIO_SPKR_I2S_TX_SCK		55
 #define GPIO_SPKR_I2S_TX_WS		56
 #define GPIO_SPKR_I2S_TX_DIN		57
-#define GPIO_AUDIO_MCLK_REV10			59
+#define GPIO_AUDIO_MCLK_REV10			53
 #define GPIO_AUDIO_MCLK			53
 #define GPIO_SPKR_I2S_RX_SCK		60
 #define GPIO_SPKR_I2S_RX_DOUT		61
@@ -161,7 +161,11 @@
 #define GPIO_OVP_CTRL		PM8038_GPIO_PM_TO_SYS(15)
 
 #if defined(CONFIG_WCD9304_CLK_9600)
+#if defined(CONFIG_MACH_SERRANO_VZW) || defined(CONFIG_MACH_SERRANO_USC)
+#define CLK_REVISION 10
+#else
 #define CLK_REVISION 0
+#endif
 #endif
 /* gpio for changed list */
 enum {
