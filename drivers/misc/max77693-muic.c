@@ -136,7 +136,11 @@ struct max77693_muic_info {
 
 	bool			is_usb_ready;
 	bool			is_mhl_ready;
+	bool			is_usb_attached;
 
+	u8		adc;
+	u8		chgtyp;
+	u8		vbvolt;
 	struct input_dev	*input;
 	int			previous_key;
 	bool			is_adc_open_prev;
@@ -678,6 +682,15 @@ static ssize_t max77693_muic_show_charger_type(struct device *dev,
 	return snprintf(buf, 9, "%s\n", "UNKNOWN");
 }
 
+void max77693_muic_monitor_status(void){
+	int ret;
+	u8 status[2];
+
+	ret = max77693_bulk_read(gInfo->muic, MAX77693_MUIC_REG_STATUS1, 2, status);
+	dev_info(gInfo->dev, "func:%s, ST1:0x%x, ST2:0x%x CABLE:%d\n", __func__,
+			status[0], status[1], gInfo->cable_type);
+}
+EXPORT_SYMBOL(max77693_muic_monitor_status);
 
 static DEVICE_ATTR(chg_type, 0664, max77693_muic_show_charger_type, NULL);
 static DEVICE_ATTR(uart_sel, 0664, max77693_muic_show_uart_sel,
@@ -1017,12 +1030,14 @@ static int max77693_muic_attach_usb_type(struct max77693_muic_info *info,
 	max77693_muic_set_usb_path(info, path);
 
 	if (path == AP_USB_MODE) {
-		if (mdata->usb_cb && info->is_usb_ready)
+		if (mdata->usb_cb && info->is_usb_ready){
 #ifdef CONFIG_USBHUB_USB3803
 			/* setting usb hub in Diagnostic(hub) mode */
 			usb3803_set_mode(USB_3803_MODE_HUB);
 #endif				/* CONFIG_USBHUB_USB3803 */
-		mdata->usb_cb(USB_CABLE_ATTACHED);
+			mdata->usb_cb(USB_CABLE_ATTACHED);
+			info->is_usb_attached=true;
+		}
 	}
 
 	return 0;
@@ -1155,8 +1170,10 @@ static void max77693_muic_attach_mhl(struct max77693_muic_info *info, u8 chgtyp)
 	dev_info(info->dev, "func:%s chgtyp:%x\n", __func__, chgtyp);
 
 	if (info->cable_type == CABLE_TYPE_USB_MUIC) {
-		if (mdata->usb_cb && info->is_usb_ready)
+		if (mdata->usb_cb && info->is_usb_ready){
 			mdata->usb_cb(USB_CABLE_DETACHED);
+			info->is_usb_attached=false;
+		}
 
 		max77693_muic_set_charging_type(info, true);
 	}
@@ -1477,8 +1494,10 @@ static void max77693_muic_detach_smart_dock(struct max77693_muic_info *info)
 	case CABLE_TYPE_SMARTDOCK_USB_MUIC:
 		pr_info("%s:%s SMARTDOCK+USB\n", DEV_NAME, __func__);
 
-		if (mdata->usb_cb && info->is_usb_ready)
+		if (mdata->usb_cb && info->is_usb_ready){
 			mdata->usb_cb(USB_CABLE_DETACHED);
+			info->is_usb_attached=false;
+		}
 		break;
 	case CABLE_TYPE_SMARTDOCK_MUIC:
 		/* clear CDDelay 500ms */
@@ -1516,8 +1535,11 @@ static void max77693_muic_attach_smart_dock(struct max77693_muic_info *info,
 			pr_info("%s:%s SMART_DOCK+USB=USB Enable\n", DEV_NAME,
 					__func__);
 
-			if (mdata->usb_cb && info->is_usb_ready)
+			if (mdata->usb_cb && info->is_usb_ready){
 				mdata->usb_cb(USB_CABLE_ATTACHED);
+				info->is_usb_attached=true;
+			}
+
 
 			info->cable_type = CABLE_TYPE_SMARTDOCK_USB_MUIC;
 		} else
@@ -1571,8 +1593,10 @@ static void max77693_muic_attach_smart_dock(struct max77693_muic_info *info,
 				pr_info("%s:%s SMART_DOCK+USB=USB Enable\n", DEV_NAME,
 						__func__);
 
-				if (mdata->usb_cb && info->is_usb_ready)
+				if (mdata->usb_cb && info->is_usb_ready){
 					mdata->usb_cb(USB_CABLE_ATTACHED);
+					info->is_usb_attached=true;
+				}
 			}
 		} else {
 			/* set CDDelay 500ms */
@@ -1877,8 +1901,10 @@ static int max77693_muic_handle_detach(struct max77693_muic_info *info, int irq)
 			break;
 		}
 
-		if (mdata->usb_cb && info->is_usb_ready)
+		if (mdata->usb_cb && info->is_usb_ready){
 			mdata->usb_cb(USB_CABLE_DETACHED);
+			info->is_usb_attached=false;
+		}
 		break;
 	case CABLE_TYPE_DESKDOCK_MUIC:
 		dev_info(info->dev, "%s: DESKDOCK\n", __func__);
@@ -1914,6 +1940,10 @@ static int max77693_muic_handle_detach(struct max77693_muic_info *info, int irq)
 		ret = max77693_muic_set_charging_type(info, false);
 		if (ret)
 			info->cable_type = CABLE_TYPE_TA_MUIC;
+		if (info->is_usb_attached && mdata->usb_cb && info->is_usb_ready){
+			mdata->usb_cb(USB_CABLE_DETACHED);
+			info->is_usb_attached=false;
+		}
 		break;
 	case CABLE_TYPE_JIG_UART_ON_MUIC:
 		dev_info(info->dev, "%s: JIG UART/BOOTON\n", __func__);
@@ -2001,11 +2031,94 @@ static int max77693_muic_handle_detach(struct max77693_muic_info *info, int irq)
 	return ret;
 }
 
+static int max77693_muic_filter_dev(struct max77693_muic_info *info,
+					u8 status1, u8 status2)
+{
+	u8 adc, adclow, adcerr, adc1k, chgtyp, vbvolt, dxovp;
+	int intr = INT_ATTACH;
+	adc = status1 & STATUS1_ADC_MASK;
+	adclow = status1 & STATUS1_ADCLOW_MASK;
+	adcerr = status1 & STATUS1_ADCERR_MASK;
+	adc1k = status1 & STATUS1_ADC1K_MASK;
+	chgtyp = status2 & STATUS2_CHGTYP_MASK;
+	vbvolt = status2 & STATUS2_VBVOLT_MASK;
+	dxovp = status2 & STATUS2_DXOVP_MASK;
+	dev_info(info->dev, "adc:%x adcerr:%x chgtyp:%x vb:%x dxovp:%x cable_type:%d ",
+		adc, adcerr, chgtyp, vbvolt, dxovp, info->cable_type);
+	dev_info(info->dev, "adclow:%x adc1k:%x\n",
+		adclow, adc1k);
+	if (adclow && adc1k) {
+		pr_info("%s:%s MHL cable connected\n", DEV_NAME, __func__);
+		return INT_ATTACH;
+	}
+	if (!adcerr && adc == ADC_AUDIODOCK) {
+		if (!chgtyp)
+		    return INT_DETACH;
+	}
+	switch (adc) {
+	case ADC_GND:
+		if (!adclow) {
+			pr_info("%s:%s ADC_GND & !adclow = OTG\n", DEV_NAME,
+					__func__);
+			break;
+		}
+		pr_info("%s:%s ADC_GND & adclow != OTG\n", DEV_NAME,
+				__func__);
+#if !defined(CONFIG_MUIC_DET_JACK)
+	case ADC_MHL ... (ADC_SMARTDOCK - 1):
+	case (ADC_OPEN - 1):
+#endif
+	case (ADC_SMARTDOCK + 1):
+	case (ADC_AUDIODOCK + 1) ... (ADC_CEA936ATYPE1_CHG - 1):
+		dev_warn(info->dev, "%s: unsupported ADC(0x%02x)\n",
+				__func__, adc);
+		intr = INT_DETACH;
+		break;
+	case ADC_CEA936ATYPE1_CHG:
+	case ADC_CEA936ATYPE2_CHG:
+		if(info->cable_type != CABLE_TYPE_NONE_MUIC
+			&& chgtyp == CHGTYP_NO_VOLTAGE
+			&& info->chgtyp != chgtyp) {
+			intr = INT_DETACH;
+		}
+		break;
+	case ADC_OPEN:
+		if (!adcerr) {
+			if (chgtyp == CHGTYP_NO_VOLTAGE) {
+				if (dxovp)
+					break;
+				else
+					intr = INT_DETACH;
+			} else if (chgtyp == CHGTYP_USB ||
+				 chgtyp == CHGTYP_DOWNSTREAM_PORT ||
+				 chgtyp == CHGTYP_DEDICATED_CHGR ||
+				 chgtyp == CHGTYP_500MA ||
+				 chgtyp == CHGTYP_1A) {
+				switch (info->cable_type) {
+				case CABLE_TYPE_OTG_MUIC:
+				case CABLE_TYPE_DESKDOCK_MUIC:
+				case CABLE_TYPE_CARDOCK_MUIC:
+				case CABLE_TYPE_SMARTDOCK_MUIC:
+				case CABLE_TYPE_SMARTDOCK_TA_MUIC:
+				case CABLE_TYPE_SMARTDOCK_USB_MUIC:
+				case CABLE_TYPE_AUDIODOCK_MUIC:
+					intr = INT_DETACH;
+					break;
+				default:
+					break;
+				}
+			}
+		}
+		break;
+	default:
+		break;
+	}
+	return intr;
+}
 static void max77693_muic_detect_dev(struct max77693_muic_info *info, int irq)
 {
 	struct i2c_client *client = info->muic;
 	u8 status[2];
-	u8 adc, chgtyp, adcerr;
 	int intr = INT_ATTACH;
 	int ret;
 	u8 cntl1_val;
@@ -2031,32 +2144,15 @@ static void max77693_muic_detect_dev(struct max77693_muic_info *info, int irq)
 		return;
 	}
 
-	adc = status[0] & STATUS1_ADC_MASK;
-	adcerr = status[0] & STATUS1_ADCERR_MASK;
-	chgtyp = status[1] & STATUS2_CHGTYP_MASK;
+	intr = max77693_muic_filter_dev(info, status[0], status[1]);
+	info->adc = status[0] & STATUS1_ADC_MASK;
+	info->chgtyp = status[1] & STATUS2_CHGTYP_MASK;
+	info->vbvolt = status[1] & STATUS2_VBVOLT_MASK;
+	if (info->adc == ADC_OPEN)
+		info->is_adc_open_prev = true;
 
-	dev_info(info->dev, "adc:%x adcerr:%x chgtyp:%x cable_type:%x\n", adc,
-		 adcerr, chgtyp, info->cable_type);
 
-	if (!adcerr && adc == ADC_OPEN) {
-		if (chgtyp == CHGTYP_NO_VOLTAGE)
-			intr = INT_DETACH;
-		else if (chgtyp == CHGTYP_USB ||
-			 chgtyp == CHGTYP_DOWNSTREAM_PORT ||
-			 chgtyp == CHGTYP_DEDICATED_CHGR ||
-			 chgtyp == CHGTYP_500MA || chgtyp == CHGTYP_1A) {
-			if (info->cable_type == CABLE_TYPE_OTG_MUIC ||
-			    info->cable_type == CABLE_TYPE_DESKDOCK_MUIC ||
-			    info->cable_type == CABLE_TYPE_CARDOCK_MUIC ||
-			    info->cable_type == CABLE_TYPE_AUDIODOCK_MUIC)
-				intr = INT_DETACH;
-		}
-	}
 
-	if (!adcerr && adc == ADC_AUDIODOCK) {
-		if (!chgtyp)
-			intr = INT_DETACH;
-	}
 
 	if (intr == INT_ATTACH) {
 		dev_info(info->dev, "%s: ATTACHED\n", __func__);
@@ -2252,6 +2348,7 @@ static void max77693_muic_usb_detect(struct work_struct *work)
 				usb3803_set_mode(USB_3803_MODE_HUB);
 #endif				/* CONFIG_USBHUB_USB3803 */
 				mdata->usb_cb(USB_CABLE_ATTACHED);
+				info->is_usb_attached=true;
 				break;
 			default :
 				break;
@@ -2293,6 +2390,7 @@ static void max77693_muic_dock_usb_detect(struct work_struct *work)
 				max77693_muic_set_usb_path(info, AP_USB_MODE);
 
 				mdata->usb_cb(USB_CABLE_ATTACHED);
+				info->is_usb_attached=true;
 				break;
 			case CABLE_TYPE_AUDIODOCK_MUIC:
 				pr_info("%s:%s now usb ready, turn"\
@@ -2524,6 +2622,9 @@ static int __devinit max77693_muic_probe(struct platform_device *pdev)
 
 	/* Set ADC debounce time: 25ms */
 	max77693_muic_set_adcdbset(info, 2);
+
+	/* Show Register State */
+	max77693_muic_monitor_status();
 
 	ret = max77693_muic_irq_init(info);
 	if (ret < 0) {

@@ -37,6 +37,10 @@
 
 #include <mach/iommu_domains.h>
 
+
+
+
+
 #if defined (CONFIG_FB_MSM_MIPI_SAMSUNG_OLED_VIDEO_QHD_PT)
 /* Check if LCD was connected. */
 #include "mipi_samsung_oled.h"
@@ -58,6 +62,8 @@ static struct vsycn_ctrl {
 	int ov_koff;
 	int ov_done;
 	atomic_t suspend;
+
+
 	int blt_change;
 	int blt_free;
 	int blt_ctrl;
@@ -65,6 +71,7 @@ static struct vsycn_ctrl {
 	struct mutex update_lock;
 	struct completion ov_comp;
 	struct completion dmap_comp;
+
 	spinlock_t spin_lock;
 	struct msm_fb_data_type *mfd;
 	struct mdp4_overlay_pipe *base_pipe;
@@ -225,6 +232,18 @@ int mdp4_dsi_video_pipe_commit(int cndx, int wait)
 	}
 	spin_unlock_irqrestore(&vctrl->spin_lock, flags);
 
+
+
+
+
+
+
+
+
+
+
+
+
 	pipe = vp->plist;
 
 	for (i = 0; i < OVERLAY_PIPE_MAX; i++, pipe++) {
@@ -287,6 +306,10 @@ int mdp4_dsi_video_pipe_commit(int cndx, int wait)
 		/* kickoff overlay engine */
 		mdp4_stat.kickoff_ov0++;
 		outpdw(MDP_BASE + 0x0004, 0);
+
+
+
+
 	}
 	spin_unlock_irqrestore(&vctrl->spin_lock, flags);
 
@@ -346,6 +369,9 @@ void mdp4_dsi_video_vsync_ctrl(struct fb_info *info, int enable)
 	vctrl->vsync_irq_enabled = enable;
 
 	mdp4_video_vsync_irq_ctrl(cndx, enable);
+
+
+
 }
 
 void mdp4_dsi_video_wait4vsync(int cndx)
@@ -353,7 +379,9 @@ void mdp4_dsi_video_wait4vsync(int cndx)
 	struct vsycn_ctrl *vctrl;
 	int ret;
 	ktime_t timestamp;
+
 	unsigned long flags;
+
 
 	if (cndx >= MAX_CONTROLLER) {
 		pr_err("%s: out or range: cndx=%d\n", __func__, cndx);
@@ -361,6 +389,8 @@ void mdp4_dsi_video_wait4vsync(int cndx)
 	}
 
 	vctrl = &vsync_ctrl_db[cndx];
+
+
 	if (atomic_read(&vctrl->suspend) > 0)
 		return;
 	spin_lock_irqsave(&vctrl->spin_lock, flags);
@@ -372,6 +402,14 @@ void mdp4_dsi_video_wait4vsync(int cndx)
 	ret = wait_event_timeout(vctrl->wait_queue_internal,
 			!ktime_equal(timestamp, vctrl->vsync_time),
 			msecs_to_jiffies(VSYNC_PERIOD * 8));
+
+
+
+
+
+
+
+
 
 	if (ret <= 0)
 		pr_err("%s timeout ret=%d", __func__, ret);
@@ -469,11 +507,45 @@ ssize_t mdp4_dsi_video_show_event(struct device *dev,
 	ktime_t timestamp;
 	unsigned long flags;
 
+
+
+
+
+
 	cndx = 0;
 	vctrl = &vsync_ctrl_db[0];
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 	spin_lock_irqsave(&vctrl->spin_lock, flags);
 	timestamp = vctrl->vsync_time;
+
+
 	spin_unlock_irqrestore(&vctrl->spin_lock, flags);
 
 	ret = wait_event_interruptible(vctrl->wait_queue,
@@ -481,6 +553,12 @@ ssize_t mdp4_dsi_video_show_event(struct device *dev,
 			vctrl->vsync_irq_enabled);
 	if (ret == -ERESTARTSYS)
 		return ret;
+
+
+
+
+
+
 
 	spin_lock_irqsave(&vctrl->spin_lock, flags);
 	vsync_tick = ktime_to_ns(vctrl->vsync_time);
@@ -509,9 +587,11 @@ void mdp4_dsi_vsync_init(int cndx)
 	vctrl->inited = 1;
 	vctrl->update_ndx = 0;
 	mutex_init(&vctrl->update_lock);
+
 	init_completion(&vctrl->dmap_comp);
 	init_completion(&vctrl->ov_comp);
 	atomic_set(&vctrl->suspend, 1);
+
 	spin_lock_init(&vctrl->spin_lock);
 	init_waitqueue_head(&vctrl->wait_queue_internal);
 	init_waitqueue_head(&vctrl->wait_queue);
@@ -554,7 +634,14 @@ void mdp4_dsi_video_base_swap(int cndx, struct mdp4_overlay_pipe *pipe)
 /* timing generator off */
 static void mdp4_dsi_video_tg_off(struct vsycn_ctrl *vctrl)
 {
+
+
+
+
+
 	MDP_OUTP(MDP_BASE + DSI_VIDEO_BASE, 0); /* turn off timing generator */
+
+
 	/* some delay after turning off the tg */
 	msleep(20);
 }
@@ -571,6 +658,14 @@ int mdp4_dsi_video_splash_done(void)
 
 	return 0;
 }
+
+#if defined(CONFIG_FB_MSM_MIPI_SAMSUNG_OLED_VIDEO_WVGA_PT) \
+|| defined (CONFIG_MACH_LT02_SPR) || defined (CONFIG_MACH_LT02_ATT)
+void pull_reset_low(void);
+#endif
+#if defined(CONFIG_MACH_LT02_CHN_CTC)
+static int first_boot = 1;
+#endif
 
 int mdp4_dsi_video_on(struct platform_device *pdev)
 {
@@ -615,6 +710,22 @@ int mdp4_dsi_video_on(struct platform_device *pdev)
 	int cndx = 0;
 	struct vsycn_ctrl *vctrl;
 	struct msm_panel_info *pinfo;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 	vctrl = &vsync_ctrl_db[cndx];
 	mfd = (struct msm_fb_data_type *)platform_get_drvdata(pdev);
@@ -683,9 +794,12 @@ int mdp4_dsi_video_on(struct platform_device *pdev)
 #endif
 /* QC Patch for LCD black out Issue */
 	if (!(mfd->cont_splash_done)) {
+#if defined(CONFIG_FB_MSM_MIPI_SAMSUNG_OLED_VIDEO_WVGA_PT) \
+|| defined (CONFIG_MACH_LT02_SPR) || defined (CONFIG_MACH_LT02_ATT)
+	pull_reset_low();
+#endif
 		mfd->cont_splash_done = 1;
-		mdp4_dsi_video_wait4vsync(0);
-		MDP_OUTP(MDP_BASE + DSI_VIDEO_BASE, 0);
+		mdp4_dsi_video_tg_off(vctrl);
 		mipi_dsi_controller_cfg(0);
 		/* Clks are enabled in probe.
 		   Disabling clocks now */
@@ -838,6 +952,10 @@ int mdp4_dsi_video_off(struct platform_device *pdev)
 
 	mdp4_dsi_video_wait4vsync(cndx);
 
+
+
+
+
 	if (pipe == NULL)
 		return -EINVAL;
 
@@ -856,6 +974,7 @@ int mdp4_dsi_video_off(struct platform_device *pdev)
 	printk(KERN_EMERG "Before Sleep in mdp4_dsi_video_off \n");
 	msleep(20);
 	printk(KERN_EMERG "After  Sleep  in mdp4_dsi_video_off \n");
+
 	dsi_video_enabled = 0;
 
 	undx =  vctrl->update_ndx;
@@ -908,6 +1027,9 @@ int mdp4_dsi_video_off(struct platform_device *pdev)
 	 */
 	mdp4_overlay_iommu_unmap_freelist(mixer);
 	mdp4_overlay_iommu_unmap_freelist(mixer);
+
+
+
 
 	/* mdp clock off */
 	mdp_clk_ctrl(0);
@@ -1076,9 +1198,11 @@ void mdp4_primary_vsync_dsi_video(void)
 	pr_debug("%s: cpu=%d\n", __func__, smp_processor_id());
 
 	spin_lock(&vctrl->spin_lock);
+
 	vctrl->vsync_time = ktime_get();
 	wake_up_all(&vctrl->wait_queue_internal);
 	wake_up_interruptible_all(&vctrl->wait_queue);
+
 	spin_unlock(&vctrl->spin_lock);
 }
 
@@ -1108,6 +1232,17 @@ void mdp4_dmap_done_dsi_video(int cndx)
 	if (vctrl->blt_change) {
 		mdp4_overlayproc_cfg(pipe);
 		mdp4_overlay_dmap_xy(pipe);
+
+
+
+
+
+
+
+
+
+
+
 		vctrl->blt_change = 0;
 	}
 

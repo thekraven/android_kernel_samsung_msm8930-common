@@ -211,6 +211,7 @@ struct bms_notify {
 	struct	work_struct	work;
 };
 #define SNMC_UNDER_TEST 1
+
 /**
  * struct pm8921_chg_chip -device information
  * @dev:			device pointer to access the parent
@@ -2098,6 +2099,7 @@ static void pm8917_disable_charging(struct pm8921_chg_chip *chip)
 #if defined SNMC_UNDER_TEST
 static void pm8917_enable_charging(struct work_struct *work)
 #else
+
 static void pm8917_enable_charging(struct pm8921_chg_chip *chip)
 #endif
 {
@@ -2128,6 +2130,7 @@ static void pm8917_enable_charging(struct pm8921_chg_chip *chip)
 	pm_chg_auto_enable(chip, 1);
 
 	if (chip->batt_pdata->siop_table) {
+
 		/* adapted SIOP */
 		usb_target_ma =
 			chip->batt_pdata->chg_current_table[
@@ -2313,12 +2316,30 @@ static int get_prop_batt_status(struct pm8921_chg_chip *chip)
 	return chip->batt_status;
 }
 
+#if defined(CONFIG_MACH_CANE)
+extern unsigned int system_rev;
+#endif
+
 static int get_prop_batt_temp(struct pm8921_chg_chip *chip)
 {
 	int rc;
 	struct pm8xxx_adc_chan_result result;
 
+#if defined(CONFIG_MACH_CANE)
+	if(system_rev==0x04)
+	{
+		chip->batt_temp = 300;
+		chip->batt_temp_adc = 300;
+
+		goto temp_check_done;
+	}
+#endif
+
+#if defined(CONFIG_MACH_BAFFINVETD_CHN_3G) || defined(CONFIG_MACH_LOGANRE_EUR_LTE)
+	if (chip->hw_rev < 1) {
+#else
 	if (chip->hw_rev < 3) {
+#endif
 		chip->batt_temp = 250;
 		chip->batt_temp_adc = 250;
 
@@ -2687,7 +2708,11 @@ ssize_t sec_bat_show_attrs(struct device *dev,
 	case BATT_VOL_ADC_AVER:
 		break;
 	case BATT_TEMP_ADC:
+#if defined(CONFIG_MACH_BAFFINVETD_CHN_3G)
+		val = chip->batt_temp_adc;
+#else
 		val = get_prop_batt_temp(chip);
+#endif
 		i += scnprintf(buf + i, PAGE_SIZE - i, "%d\n",
 			val);
 		break;
@@ -2901,6 +2926,38 @@ ssize_t sec_bat_store_attrs(
 	case SIOP_LEVEL:
 		if (sscanf(buf, "%d\n", &x) == 1) {
 			if (chip->batt_status == POWER_SUPPLY_STATUS_CHARGING) {
+#ifdef 	CONFIG_MACH_BAFFIN		
+				pr_info("%s : SIOP level to %d, original is %d\n",
+						__func__, x, chip->siop_level);
+
+				if(x>50)
+				{
+					x=100;
+				}
+				else if(x>0)
+				{
+					x=50;
+				}
+				else if(x<=0)
+				{
+					x=0;
+				}
+				
+				if((chip->batt_pdata->chg_current_table[chip->cable_type].vbus > chip->batt_pdata->chg_current_table[CABLE_TYPE_USB].vbus)&&(x != chip->siop_level))
+				{
+					charging_current =
+						chip->batt_pdata->chg_current_table[
+						chip->cable_type].vbus * x / 100;
+
+					usb_target_ma = charging_current;
+					pm8921_charger_vbus_draw(usb_target_ma);
+
+					chip->siop_level = x;
+					pr_info("%s : SIOP level to %d(%dmA)\n",
+						__func__, chip->siop_level,
+						usb_target_ma);
+				}
+#else
 				charging_current =
 					chip->batt_pdata->chg_current_table[
 					chip->cable_type].vbus * x / 100;
@@ -2914,16 +2971,19 @@ ssize_t sec_bat_store_attrs(
 					CABLE_TYPE_USB].vbus;
 
 				usb_target_ma = charging_current;
-				if (x != chip->siop_level)
+				if (x != chip->siop_level) {
 					schedule_delayed_work(
 					&the_chip->vin_collapse_check_work,
 					round_jiffies_relative(msecs_to_jiffies
 					(VIN_MIN_COLLAPSE_CHECK_MS)));
+					pm8921_charger_vbus_draw(usb_target_ma);
+				}
 
 				chip->siop_level = x;
 				pr_info("%s : SIOP level to %d(%dmA)\n",
 					__func__, chip->siop_level,
 					usb_target_ma);
+#endif	
 			}
 			ret = count;
 		}
@@ -4555,6 +4615,8 @@ static bool pm_abs_time_management(struct pm8921_chg_chip *chip)
 			pr_info("%s: Recharging Timer Expired\n", __func__);
 			chip->is_recharging = false;
 			chip->is_chgtime_expired = true;
+			wake_lock_timeout(
+						&chip->cable_wake_lock, 90*HZ);
 			pm8917_disable_charging(chip);
 
 			return false;
@@ -4564,6 +4626,9 @@ static bool pm_abs_time_management(struct pm8921_chg_chip *chip)
 			(chip->recent_reported_soc >= 100)) {
 			pr_info("%s: Charging Timer Expired\n", __func__);
 			chip->is_chgtime_expired = true;
+			wake_lock_timeout(
+						&chip->cable_wake_lock, 90*HZ);
+
 			pm8917_disable_charging(chip);
 			return false;
 		}
