@@ -92,9 +92,9 @@ obj-$(CONFIG_TOUCHSCREEN_SYNAPTICS_DSX_RMI4_DEV)	+= synaptics_rmi_dev.o
 obj-$(CONFIG_TOUCHSCREEN_SYNAPTICS_DSX_FW_UPDATE) 	+= synaptics_fw_update.o
 obj-$(CONFIG_TOUCHSCREEN_MMS144)        += mms_100_ts.o
 obj-$(CONFIG_TOUCHSCREEN_MMS136)        += mms_100_ts.o
-obj-$(CONFIG_TOUCHSCREEN_ZINITIX_BT432)	+= zinitix_bt_ts.o
+obj-$(CONFIG_TOUCHSCREEN_ZINITIX_BT432)	+= zinitix_bt_432.o
 ifdef CONFIG_MACH_LT02
-obj-$(CONFIG_TOUCHSCREEN_ZINITIX_BT532)	+= zinitix_bt_ts.o
+obj-$(CONFIG_TOUCHSCREEN_ZINITIX_BT532)	+= zinitix_bt_532.o
 else
 obj-$(CONFIG_TOUCHSCREEN_ZINITIX_BT532)	+= zinitix_touch.o
 endif
