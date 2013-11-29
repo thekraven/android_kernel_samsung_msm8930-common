@@ -23,9 +23,6 @@
 #include "mipi_samsung_esd_refresh.h"
 #include <linux/gpio.h>
 #include <mach/msm8930-gpio.h>
-#ifdef CONFIG_TOUCHSCREEN_SYNAPTICS_I2C_RMI
-#include <linux/i2c/synaptics_rmi.h>
-#endif
 
 static struct mipi_controls mipi_control;
 static struct esd_data_t *esd_enable;
@@ -93,14 +90,6 @@ static void lcd_esd_seq(struct esd_data_t *p_esd_data)
 			else
 				printk(KERN_ERR "ESD Retry!!!! (cnt=%d)\n",retry+1);
 		}
-#endif
-
-#ifdef CONFIG_TOUCHSCREEN_SYNAPTICS_I2C_RMI
-#if defined(CONFIG_MACH_MELIUS_SKT) \
-	|| defined(CONFIG_MACH_MELIUS_KTT) \
-	|| defined(CONFIG_MACH_MELIUS_LGT)
-		synaptics_inform_callbacks(RMI4_CALLBACK_TSP_RESET, 0);
-#endif
 #endif
 
 		p_esd_data->refresh_ongoing = false;

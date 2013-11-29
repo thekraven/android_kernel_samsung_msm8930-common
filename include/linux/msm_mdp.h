@@ -351,14 +351,6 @@ struct mdp_overlay_pp_params {
 	struct mdp_sharp_cfg sharp_cfg;
 };
 
-enum {
-	BLEND_OP_NOT_DEFINED = 0,
-	BLEND_OP_OPAQUE,
-	BLEND_OP_PREMULTIPLIED,
-	BLEND_OP_COVERAGE,
-	BLEND_OP_MAX,
-};
-
 struct mdp_overlay {
 	struct msmfb_img src;
 	struct mdp_rect src_rect;
@@ -367,7 +359,6 @@ struct mdp_overlay {
 	uint32_t is_fg;		/* control alpha & transp */
 	uint32_t alpha;
 	uint32_t transp_mask;
-	uint32_t blend_op;
 	uint32_t flags;
 	uint32_t id;
 	uint32_t user_data[8];
@@ -530,6 +521,7 @@ enum {
 	mdp_bl_scale_cfg,
 	mdp_op_calib_cfg,
 	mdp_op_pa_cfg,
+	mdp_notify_kill,
 	mdp_op_max,
 };
 
@@ -575,6 +567,13 @@ struct mdp_buf_sync {
 	int *acq_fen_fd;
 	int *rel_fen_fd;
 	int *retire_fen_fd;
+};
+
+struct mdp_buf_fence {
+	uint32_t flags;
+	uint32_t acq_fen_fd_cnt;
+	int acq_fen_fd[MDP_MAX_FENCE_FD];
+	int rel_fen_fd[MDP_MAX_FENCE_FD];
 };
 
 #define MDP_DISPLAY_COMMIT_OVERLAY 0x00000001

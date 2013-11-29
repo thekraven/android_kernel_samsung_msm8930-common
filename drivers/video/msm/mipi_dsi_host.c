@@ -56,7 +56,6 @@ static struct mutex clk_mutex;
 
 static struct list_head pre_kickoff_list;
 static struct list_head post_kickoff_list;
-struct work_struct mdp_reset_work;
 
 #if defined(CONFIG_RUNTIME_MIPI_CLK_CHANGE) || defined(CONFIG_FB_MSM_CAMERA_CSC)
 static struct mutex dsi_vsync_mutex;
@@ -98,11 +97,6 @@ void mipi_dsi_mdp_stat_inc(int which)
 }
 #endif
 
-static void mdp_reset_wq_handler(struct work_struct *work)
-{
-	mdp4_mixer_reset(0);
-}
-
 void mipi_dsi_init(void)
 {
 	init_completion(&dsi_dma_comp);
@@ -115,7 +109,6 @@ void mipi_dsi_init(void)
 	spin_lock_init(&dsi_clk_lock);
 	mutex_init(&cmd_mutex);
 	mutex_init(&clk_mutex);
-	INIT_WORK(&mdp_reset_work, mdp_reset_wq_handler);
 
 	INIT_LIST_HEAD(&pre_kickoff_list);
 	INIT_LIST_HEAD(&post_kickoff_list);
@@ -193,7 +186,7 @@ void mipi_dsi_clk_cfg(int on)
 	mutex_lock(&clk_mutex);
 	if (on) {
 		if (dsi_clk_cnt == 0) {
-			mipi_dsi_prepare_ahb_clocks();
+			mipi_dsi_prepare_clocks();
 			mipi_dsi_ahb_ctrl(1);
 			mipi_dsi_clk_enable();
 		}
@@ -203,9 +196,8 @@ void mipi_dsi_clk_cfg(int on)
 			dsi_clk_cnt--;
 			if (dsi_clk_cnt == 0) {
 				mipi_dsi_clk_disable();
-				mipi_dsi_unprepare_clocks();
 				mipi_dsi_ahb_ctrl(0);
-				mipi_dsi_unprepare_ahb_clocks();
+				mipi_dsi_unprepare_clocks();
 			}
 		}
 	}
@@ -216,7 +208,6 @@ void mipi_dsi_clk_cfg(int on)
 
 void mipi_dsi_turn_on_clks(void)
 {
-	mipi_dsi_prepare_ahb_clocks();
 	mipi_dsi_ahb_ctrl(1);
 	mipi_dsi_clk_enable();
 }
@@ -224,9 +215,7 @@ void mipi_dsi_turn_on_clks(void)
 void mipi_dsi_turn_off_clks(void)
 {
 	mipi_dsi_clk_disable();
-	mipi_dsi_unprepare_clocks();
 	mipi_dsi_ahb_ctrl(0);
-	mipi_dsi_unprepare_ahb_clocks();
 }
 
 static void mipi_dsi_action(struct list_head *act_list)
@@ -1841,8 +1830,93 @@ int mipi_dsi_cmds_rx_lp_new(struct dsi_buf *tp, struct dsi_buf *rp,
    }
 }
 #endif
+#if defined(CONFIG_MIPI_MDP_REGISTER_DUMP)
+extern boolean mdp_current_clk_on;
+extern struct mdp4_statistic mdp4_stat;
+int normalcase = 1;
+void dumpreg(int error)
+{
 
+	uint32 tmp0x0,tmp0x4,tmp0x8,tmp0xc;
+	int i;
 
+	if (error)
+		pr_err("%s: =============IT's normal case ==============\n", __func__);
+	else
+		pr_err("%s: =============IT's Fail case ==============\n", __func__);
+
+	//for(int i=0; i<0x558;){
+	for(i=0; i< 86; i++){ //0x558/16 = 85
+		tmp0x0 = MIPI_INP(MIPI_DSI_BASE+(i*16)+0x0);
+		tmp0x4 = MIPI_INP(MIPI_DSI_BASE+(i*16)+0x4);
+		tmp0x8 = MIPI_INP(MIPI_DSI_BASE+(i*16)+0x8);
+
+		if (i != 85)
+			tmp0xc = MIPI_INP(MIPI_DSI_BASE+(i*16)+0xc);
+		else
+			tmp0xc = 0 ;
+
+		pr_err("[%04x] : %08x %08x %08x %08x\n",i*16, tmp0x0,tmp0x4,tmp0x8,tmp0xc);
+	}
+	pr_err("%s: ============= END ==============\n", __func__);
+
+}
+
+void dumstate(int error)
+{
+	if (error)
+		pr_err("%s: =============IT's normal case ==============\n", __func__);
+	else
+		pr_err("%s: =============IT's Fail case ==============\n", __func__);
+
+	pr_err("intr_tot :%08lu\n", mdp4_stat.intr_tot);
+	pr_err("intr_underrun_p :%08lu\n", mdp4_stat.intr_underrun_p);
+	pr_err("intr_dma_p :%08lu\n", mdp4_stat.intr_dma_p);
+	pr_err("dsi_clk_on :%08lu\n", mdp4_stat.dsi_clk_on);
+	pr_err("dsi_clk_off :%08lu\n", mdp4_stat.dsi_clk_off);
+	pr_err("intr_dsi :%08lu\n", mdp4_stat.intr_dsi);
+	pr_err("intr_dsi_mdp :%08lu\n", mdp4_stat.intr_dsi_mdp);
+	pr_err("intr_dsi_cmd :%08lu\n", mdp4_stat.intr_dsi_cmd);
+	pr_err("intr_dsi_err :%08lu\n", mdp4_stat.intr_dsi_err);
+	pr_err("mdp_current_clk_on : %08d\n", mdp_current_clk_on);
+	pr_err("%s: ============= END ==============\n", __func__);
+}
+void mdp4_dump_regs(void)
+{
+	int i, z, start, len;
+	int offsets[] = {0x0, 0x200, 0x10000, 0x18000,  0x20000,  0x30000,  0x40000,  0x50000, 0x88000, 0x90000, 0xB0000, 0xD0000, 0xE0000}; 
+	int length[]  = {24,     64,     101,     101,       32,       32,       32,       32,     101,      64,      64,      27,      64};
+
+	mdp_pipe_ctrl(MDP_CMD_BLOCK, MDP_BLOCK_POWER_ON, FALSE);
+	for (i = 0; i < sizeof(offsets) / sizeof(int); i++) {
+		start = offsets[i];
+		len   = length[i];
+		printk("-------- Address %05x: -------\n", start);
+		for (z = 0; z < len; z++) {
+			if ((z & 3) == 0)
+				printk("%05x:", start + (z * 4));
+			printk(" %08x", inpdw(MDP_BASE + start + (z * 4)));
+			if ((z & 3) == 3)
+				printk("\n");
+		}
+		if ((z & 3) != 0)
+			printk("\n");
+	}
+	mdp_pipe_ctrl(MDP_CMD_BLOCK, MDP_BLOCK_POWER_OFF, FALSE);
+}
+
+void dsi_clk_dump(void)
+{
+	printk(" ======== dsi clock dump ++++  =====================\n");
+	printk(" 0x0130 : %08x\n",MIPI_INP(mmss_cc_base + 0x0130));
+	printk(" 0x0134 : %08x\n",MIPI_INP(mmss_cc_base + 0x0134));
+	printk(" 0x0138 : %08x\n",MIPI_INP(mmss_cc_base + 0x0138));
+	printk(" 0x004c : %08x\n",MIPI_INP(mmss_cc_base + 0x004c));
+	printk(" 0x0050 : %08x\n",MIPI_INP(mmss_cc_base + 0x0050));
+	printk(" 0x0054 : %08x\n",MIPI_INP(mmss_cc_base + 0x0054));
+	printk(" ======== dsi clock dump ---- =====================\n");
+}
+#endif
 int mipi_dsi_cmd_dma_tx(struct dsi_buf *tp)
 {
 	unsigned long flags;
@@ -1902,6 +1976,14 @@ int mipi_dsi_cmd_dma_tx(struct dsi_buf *tp)
 	if (!wait_for_completion_timeout(&dsi_dma_comp,
 					msecs_to_jiffies(200))) {
 		pr_err("%s: dma timeout error\n", __func__);
+#if defined(CONFIG_MIPI_MDP_REGISTER_DUMP)
+		dumpreg(0);
+		dumstate(0);
+		mdp4_dump_regs();
+		dsi_clk_dump();
+		console_verbose();
+		dump_stack();
+#endif
 	}
 
 	dma_unmap_single(&dsi_dev, tp->dmap, tp->len, DMA_TO_DEVICE);
@@ -2122,11 +2204,6 @@ void mipi_dsi_ack_err_status(void)
 
 	if (status) {
 		MIPI_OUTP(MIPI_DSI_BASE + 0x0064, status);
-		/*
-		 * base on hw enginner, write an extra 0 needed
-		 * to clear error bits
-		 */
-		MIPI_OUTP(MIPI_DSI_BASE + 0x0064, ~status);
 		pr_debug("%s: status=%x\n", __func__, status);
 	}
 }
@@ -2164,7 +2241,7 @@ void mipi_dsi_fifo_status(void)
 		MIPI_OUTP(MIPI_DSI_BASE + 0x0008, status);
 		pr_err("%s: Error: status=%x\n", __func__, status);
 		mipi_dsi_sw_reset();
-		schedule_work(&mdp_reset_work);
+		mdp4_mixer_reset(0);
 	}
 }
 
@@ -2228,7 +2305,12 @@ int mipi_runtime_csc_update(uint32_t reg[][2], int length)
 {
 	int rc;
 	int loop;
-
+	struct msm_fb_data_type *mfd;
+	mfd = (struct msm_fb_data_type *)registered_fb[0]->par;
+	if(mfd->panel_power_on == false){
+		pr_info("panel is off, no csc update\n");
+		return 0;
+	}
 	mutex_lock(&dsi_vsync_mutex);
 
 	csc_length = length;
@@ -2243,7 +2325,7 @@ int mipi_runtime_csc_update(uint32_t reg[][2], int length)
 	mipi_dsi_irq_set(DSI_INTR_VIDEO_DONE_MASK,
 					DSI_INTR_VIDEO_DONE_MASK);
 
-	rc = wait_for_completion_timeout(&dsi_vsync_comp, 2 * HZ);
+	rc = wait_for_completion_timeout(&dsi_vsync_comp, 5 * HZ);
 
 	if (!rc) {
 		pr_err("%s: dma timeout error\n", __func__);
@@ -2348,22 +2430,17 @@ irqreturn_t mipi_dsi_isr(int irq, void *ptr)
 #else
 #if defined(CONFIG_FB_MSM_CAMERA_CSC)
 		if (csc_updated) {
-			if (inpdw(MDP_BASE+0x90014)) {
-				pr_debug("%s VIDEO_ENGINE BUSY", __func__);
-				
-			} else {
-				int loop = 0;
-				for (loop = 0; loop < csc_length; loop++) {
-					outpdw(csc_reg[loop][0], csc_reg[loop][1]);
-					pr_debug("%s 0x%x 0x%x ", __func__, csc_reg[loop][0], csc_reg[loop][1]);
-				}
-				csc_updated = 0;
-				mipi_dsi_irq_set(DSI_INTR_VIDEO_DONE_MASK, 0);
-				mipi_dsi_disable_irq_nosync(DSI_VIDEO_TERM);
-				complete(&dsi_vsync_comp);
-				pr_info("%s CSC update done \n", __func__);
-				pr_debug("%s VIDEO_ENGINE NOT BUSY", __func__);
+			int loop = 0;
+			for (loop = 0; loop < csc_length; loop++) {
+				outpdw(csc_reg[loop][0], csc_reg[loop][1]);
+				pr_debug("%s 0x%x 0x%x ", __func__, csc_reg[loop][0], csc_reg[loop][1]);
 			}
+			csc_updated = 0;
+			mipi_dsi_irq_set(DSI_INTR_VIDEO_DONE_MASK, 0);
+			mipi_dsi_disable_irq_nosync(DSI_VIDEO_TERM);
+			complete(&dsi_vsync_comp);
+			pr_info("%s CSC update done \n", __func__);
+			pr_debug("%s VIDEO_ENGINE NOT BUSY", __func__);
 
 			spin_lock(&dsi_mdp_lock);
 			complete(&dsi_video_comp);

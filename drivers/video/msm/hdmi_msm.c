@@ -88,6 +88,9 @@ static bool hdmi_msm_cable_connected(void);
 #include <linux/kernel.h>
 #endif
 
+#ifdef CONFIG_SAMSUNG_HDMI_OFF_WORKAROUND
+extern boolean  mdp_shutdown_check_for_hdmi;
+#endif
 /* Enable HDCP by default */
 static bool hdcp_feature_on = true;
 
@@ -2911,7 +2914,8 @@ static int hdcp_authentication_part2(void)
 			}
 			if (!timeout_count) {
 				ret = -ETIMEDOUT;
-				DEV_ERR("%s(%d): timedout", __func__, __LINE__);
+				DEV_ERR("%s: (%d): timedout\n",
+						__func__, __LINE__);
 				goto error;
 			}
 		}
@@ -4530,14 +4534,8 @@ static int hdmi_msm_power_off(struct platform_device *pdev)
 {
 	int ret = 0;
 
-	/*
-	don't check for hpd_initialized here since user space may
-	turn off HPD via hdmi_msm_hpd_feature() before power off is
-	called which leads to HDCP HW lockup on the next power on.
-	*/
-	if (!(MSM_HDMI_BASE && hdmi_msm_state &&
-			hdmi_msm_state->hdmi_app_clk)) {
-		DEV_ERR("%s: HDMI not initialized\n", __func__);
+	if (!hdmi_ready()) {
+		DEV_ERR("%s: HDMI/HPD not initialized\n", __func__);
 		return ret;
 	}
 
@@ -4572,7 +4570,11 @@ static int hdmi_msm_power_off(struct platform_device *pdev)
 
 /*	SWITCH_SET_HDMI_AUDIO(-1, 0); */
 
-	if (!hdmi_msm_is_dvi_mode())
+	if (!hdmi_msm_is_dvi_mode()
+#ifdef CONFIG_SAMSUNG_HDMI_OFF_WORKAROUND
+		&& !mdp_shutdown_check_for_hdmi
+#endif
+		)
 		hdmi_msm_audio_off();
 
 	hdmi_msm_powerdown_phy();
@@ -4681,21 +4683,21 @@ static int __devinit hdmi_msm_probe(struct platform_device *pdev)
 	hdmi_msm_state->hdmi_app_clk = clk_get(&pdev->dev, "core_clk");
 	if (IS_ERR(hdmi_msm_state->hdmi_app_clk)) {
 		DEV_ERR("'core_clk' clk not found\n");
-		rc = PTR_ERR(hdmi_msm_state->hdmi_app_clk);
+		rc = IS_ERR(hdmi_msm_state->hdmi_app_clk);
 		goto error;
 	}
 
 	hdmi_msm_state->hdmi_m_pclk = clk_get(&pdev->dev, "master_iface_clk");
 	if (IS_ERR(hdmi_msm_state->hdmi_m_pclk)) {
 		DEV_ERR("'master_iface_clk' clk not found\n");
-		rc = PTR_ERR(hdmi_msm_state->hdmi_m_pclk);
+		rc = IS_ERR(hdmi_msm_state->hdmi_m_pclk);
 		goto error;
 	}
 
 	hdmi_msm_state->hdmi_s_pclk = clk_get(&pdev->dev, "slave_iface_clk");
 	if (IS_ERR(hdmi_msm_state->hdmi_s_pclk)) {
 		DEV_ERR("'slave_iface_clk' clk not found\n");
-		rc = PTR_ERR(hdmi_msm_state->hdmi_s_pclk);
+		rc = IS_ERR(hdmi_msm_state->hdmi_s_pclk);
 		goto error;
 	}
 
@@ -4862,7 +4864,8 @@ static int hdmi_msm_hpd_feature(int on)
 		return rc;
 
 	if (on) {
-		rc = hdmi_msm_hpd_on();
+		if(external_common_state->mhl_hpd_state)
+			rc = hdmi_msm_hpd_on();
 	} else {
 		if (external_common_state->hpd_state) {
 #ifdef	__CONFIG_MODIFY_HDCP_FAIL__
