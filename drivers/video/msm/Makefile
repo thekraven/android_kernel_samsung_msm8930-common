@@ -86,6 +86,7 @@ obj-$(CONFIG_FB_MSM_MIPI_DSI_ORISE) += mipi_orise.o
 obj-$(CONFIG_FB_MSM_MIPI_DSI_RENESAS) += mipi_renesas.o
 obj-$(CONFIG_FB_MSM_MIPI_DSI_SAMSUNG_OLED) += mipi_samsung_oled.o
 obj-$(CONFIG_FB_MSM_MIPI_DSI_HX8389B_TFT) += mipi_hx8389b.o
+obj-$(CONFIG_FB_MSM_MIPI_DSI_HX8389BDS15_TFT) += mipi_hx8389b_tft.o
 obj-$(CONFIG_MACH_LT02_CHN_CTC) += mipi2lvds_vx5b3d_tft_wsvga.o
 obj-$(CONFIG_FB_MSM_MIPI_DSI_NOVATEK_NT35596) += mipi_novatek_NT35596.o
 obj-$(CONFIG_FB_MSM_MIPI_DSI_HX8369B_TFT) += mipi_hx8369b.o
@@ -94,7 +95,7 @@ obj-$(CONFIG_FB_MSM_MIPI_DSI_MAGNA_OLED) += mipi_magna_oled.o
 obj-$(CONFIG_MACH_LT02_SPR) += mipi_tc358764_dsi2lvds.o mipi_ql_dsi2lvds.o
 obj-$(CONFIG_MACH_LT02_ATT) += mipi_tc358764_dsi2lvds.o mipi_ql_dsi2lvds.o
 obj-$(CONFIG_FB_MSM_MIPI_DSI_HIMAX_TFT) += mipi_himax_tft.o
-obj-$(CONFIG_FB_MSM_MIPI_DSI_TRULY) += mipi_truly.o
+obj-$(CONFIG_FB_MSM_MIPI_DSI_SAMSUNG_TFT) += mipi_samsung_tft.oG_FB_MSM_MIPI_DSI_TRULY) += mipi_truly.o
 obj-$(CONFIG_FB_MSM_MIPI_DSI_NT35510) += mipi_NT35510.o
 obj-$(CONFIG_FB_MSM_MIPI_DSI_NT35516) += mipi_truly_tft540960_1_e.o
 obj-$(CONFIG_FB_MSM_MIPI_DSI_NT35590) += mipi_NT35590.o
